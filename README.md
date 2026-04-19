@@ -5,7 +5,7 @@
 **FinOps-for-AI platform** — monitor, control, and optimize your organization's spending on AI tools and LLM services.
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
-[![Discord](https://img.shields.io/discord/PLACEHOLDER?color=5865F2&label=Discord)](https://discord.gg/PLACEHOLDER)
+[![Discord](https://img.shields.io/discord/vkqcKrYr?color=5865F2&label=Discord)](https://discord.gg/vkqcKrYr)
 
 [Getting Started](#getting-started) · [Features](#features) · [Tech Stack](#tech-stack) · [Contributing](#contributing) · [License](#license)
 
@@ -130,7 +130,7 @@ We welcome contributions! Here's how to get started:
 2. Read our contributing guidelines (coming soon)
 3. Fork the repo, create a feature branch, and submit a PR
 
-Join our [Discord](https://discord.gg/PLACEHOLDER) for discussions and support.
+Join our [Discord](https://discord.gg/vkqcKrYr) for discussions and support.
 
 ## License
 
