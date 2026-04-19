@@ -1,25 +1,23 @@
-# Dependencies
+# Node
 node_modules/
-.pnp
-.pnp.js
+.pnpm-store/
+dist/
+.next/
+out/
+.turbo/
 
 # Go
 bin/
 *.exe
-*.exe~
 *.dll
 *.so
 *.dylib
-*.test
-*.out
-vendor/
-
-# Build
-.next/
-out/
-dist/
-build/
-.turbo/
+server/api
+server/migrate
+server/seed
+/usagely-api
+/usagely-migrate
+/usagely-seed
 
 # Environment
 .env
@@ -28,28 +26,41 @@ build/
 !.env.example
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
-Thumbs.db
 
-# Debug
+# Logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Database
+# Databases (local dev only)
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
+*.sqlite3
 
-# Coverage
-coverage/
+# Build artifacts
+*.tsbuildinfo
+next-env.d.ts
+
+# Agent/planning scratchpads
+.sisyphus/
+.claude-mem/
+.aider*
+CLAUDE.md
+AGENTS.md
+
+# Docs-per-directory agent metadata
+apps/**/AGENTS.md
+apps/**/CLAUDE.md
 
 # Misc
-.cache/
-tmp/
+coverage/
+.vercel/

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "usagely.fullname" . }}-api
+  labels:
+    {{- include "usagely.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+data:
+  PORT: {{ .Values.api.port | quote }}
+  CORS_ORIGIN: {{ printf "http://%s-web:%d" (include "usagely.fullname" .) (int .Values.web.port) | quote }}
+  EDITION: {{ .Values.edition | quote }}
+  {{- if .Values.postgresql.enabled }}
+  DATABASE_URL: {{ printf "postgres://%s:%s@%s-postgres:5432/%s?sslmode=disable" .Values.postgresql.auth.username .Values.postgresql.auth.password (include "usagely.fullname" .) .Values.postgresql.auth.database | quote }}
+  {{- end }}
+  {{- range $key, $val := .Values.api.env }}
+  {{ $key }}: {{ $val | quote }}
+  {{- end }}

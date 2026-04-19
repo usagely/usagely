@@ -1,0 +1,297 @@
+package handler
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// User represents a user in the people list
+type User struct {
+	ID      string  `json:"id"`
+	Name    string  `json:"name"`
+	Email   string  `json:"email"`
+	Team    string  `json:"team"`
+	Role    string  `json:"role"`
+	Tokens  int64   `json:"tokens"`
+	Cost    float64 `json:"cost"`
+	PRs     int     `json:"prs"`
+	TopTool string  `json:"top_tool"`
+}
+
+// PeopleResponse is the response for GET /api/v1/people
+type PeopleResponse struct {
+	Users []User `json:"users"`
+}
+
+// DailyActivity represents daily activity data
+type DailyActivity struct {
+	Date  string  `json:"date"`
+	Value float64 `json:"value"`
+}
+
+// ProfileModel represents a model used in a user profile
+type ProfileModel struct {
+	Name   string  `json:"name"`
+	Tokens int64   `json:"tokens"`
+	Cost   float64 `json:"cost"`
+	Calls  int     `json:"calls"`
+	Color  string  `json:"color"`
+}
+
+// ProfileTool represents a tool provisioned in a user profile
+type ProfileTool struct {
+	Name     string  `json:"name"`
+	Category string  `json:"category"`
+	Usage    string  `json:"usage"`
+	Cost     float64 `json:"cost"`
+	Status   string  `json:"status"`
+}
+
+// Session represents a recent session
+type Session struct {
+	ID       string  `json:"id"`
+	When     string  `json:"when"`
+	Tool     string  `json:"tool"`
+	Model    string  `json:"model"`
+	Tag      string  `json:"tag"`
+	Duration string  `json:"duration"`
+	Tokens   int64   `json:"tokens"`
+	Cost     float64 `json:"cost"`
+	Outcome  string  `json:"outcome"`
+}
+
+// ProfileResponse is the response for GET /api/v1/people/:email
+type ProfileResponse struct {
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	Email         string          `json:"email"`
+	Team          string          `json:"team"`
+	Role          string          `json:"role"`
+	Tokens        int64           `json:"tokens"`
+	Cost          float64         `json:"cost"`
+	PRs           int             `json:"prs"`
+	TopTool       string          `json:"top_tool"`
+	DailyActivity []DailyActivity `json:"daily_activity"`
+	HourlyPattern [][]int         `json:"hourly_pattern"`
+	Models        []ProfileModel  `json:"models"`
+	Tools         []ProfileTool   `json:"tools"`
+	Sessions      []Session       `json:"sessions"`
+}
+
+// People returns a handler that lists all users with optional team filter
+func People(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		resp := &PeopleResponse{
+			Users: []User{},
+		}
+
+		// If no pool, return empty response
+		if pool == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		// Get org_id from context (set by auth middleware)
+		orgID, ok := r.Context().Value("org_id").(string)
+		if !ok || orgID == "" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Get team filter from query params
+		team := r.URL.Query().Get("team")
+
+		// Build query
+		query := `
+			SELECT u.id, u.name, u.email, t.name, u.role,
+				   COALESCE(uu.tokens_used, 0), COALESCE(uu.cost_usd, 0),
+				   COALESCE(uu.prs_merged, 0), COALESCE(uu.top_tool, '')
+			FROM users u
+			LEFT JOIN teams t ON u.team_id = t.id
+			LEFT JOIN user_usage uu ON uu.user_id = u.id
+			WHERE u.org_id = $1
+		`
+		args := []interface{}{orgID}
+
+		if team != "" && team != "All" {
+			query += ` AND t.name = $2`
+			args = append(args, team)
+		}
+
+		query += ` ORDER BY u.name ASC`
+
+		rows, err := pool.Query(ctx, query, args...)
+		if err != nil {
+			http.Error(w, "failed to fetch users", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var u User
+			var teamName *string
+			if err := rows.Scan(&u.ID, &u.Name, &u.Email, &teamName, &u.Role,
+				&u.Tokens, &u.Cost, &u.PRs, &u.TopTool); err != nil {
+				http.Error(w, "failed to scan user", http.StatusInternalServerError)
+				return
+			}
+			if teamName != nil {
+				u.Team = *teamName
+			}
+			resp.Users = append(resp.Users, u)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(resp)
+	}
+}
+
+// Profile returns a handler that fetches a user's full profile by email
+func Profile(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		email := r.PathValue("email")
+		if email == "" {
+			http.Error(w, "email required", http.StatusBadRequest)
+			return
+		}
+
+		resp := &ProfileResponse{
+			DailyActivity: []DailyActivity{},
+			HourlyPattern: [][]int{},
+			Models:        []ProfileModel{},
+			Tools:         []ProfileTool{},
+			Sessions:      []Session{},
+		}
+
+		// If no pool, return empty response
+		if pool == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		// Get org_id from context
+		orgID, ok := r.Context().Value("org_id").(string)
+		if !ok || orgID == "" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Fetch user by email
+		row := pool.QueryRow(ctx, `
+			SELECT u.id, u.name, u.email, t.name, u.role,
+				   COALESCE(uu.tokens_used, 0), COALESCE(uu.cost_usd, 0),
+				   COALESCE(uu.prs_merged, 0), COALESCE(uu.top_tool, '')
+			FROM users u
+			LEFT JOIN teams t ON u.team_id = t.id
+			LEFT JOIN user_usage uu ON uu.user_id = u.id
+			WHERE u.org_id = $1 AND u.email = $2
+		`, orgID, email)
+
+		var teamName *string
+		if err := row.Scan(&resp.ID, &resp.Name, &resp.Email, &teamName, &resp.Role,
+			&resp.Tokens, &resp.Cost, &resp.PRs, &resp.TopTool); err != nil {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+		if teamName != nil {
+			resp.Team = *teamName
+		}
+
+		// Generate daily activity (30 days of synthetic data)
+		now := time.Now()
+		for i := 0; i < 30; i++ {
+			date := now.AddDate(0, 0, -29+i)
+			dateStr := date.Format("2006-01-02")
+			// Formula from screens3.jsx:69-72
+			dayFloat := float64(i)
+			value := 40 + 25*sinApprox(dayFloat/3) + randomFloat()*30
+			if i > 20 {
+				value += 20
+			}
+			if value < 5 {
+				value = 5
+			}
+			resp.DailyActivity = append(resp.DailyActivity, DailyActivity{
+				Date:  dateStr,
+				Value: value,
+			})
+		}
+
+		// Hardcoded hourly pattern (7 days × 12 hours from screens3.jsx:152-160)
+		resp.HourlyPattern = [][]int{
+			{0, 0, 0, 0, 20, 80, 90, 70, 80, 90, 60, 30},
+			{0, 0, 0, 0, 25, 85, 95, 80, 90, 85, 70, 40},
+			{0, 0, 0, 0, 30, 90, 100, 85, 95, 90, 80, 45},
+			{0, 0, 0, 0, 30, 85, 90, 80, 85, 80, 60, 35},
+			{0, 0, 0, 0, 20, 70, 80, 60, 50, 30, 20, 10},
+			{0, 0, 0, 0, 0, 10, 15, 10, 5, 0, 0, 0},
+			{0, 0, 0, 0, 5, 20, 30, 20, 10, 5, 0, 0},
+		}
+
+		// Hardcoded models (from screens3.jsx:73-78)
+		resp.Models = []ProfileModel{
+			{Name: "claude-sonnet-4.5", Tokens: 12_400_000, Cost: 720, Calls: 4820, Color: "var(--chart-1)"},
+			{Name: "gpt-4.1-mini", Tokens: 6_300_000, Cost: 210, Calls: 8120, Color: "var(--chart-2)"},
+			{Name: "claude-opus-4", Tokens: 1_800_000, Cost: 640, Calls: 480, Color: "var(--chart-4)"},
+			{Name: "gpt-4o", Tokens: 1_600_000, Cost: 410, Calls: 920, Color: "var(--chart-3)"},
+		}
+
+		// Hardcoded tools (from screens3.jsx:79-86)
+		resp.Tools = []ProfileTool{
+			{Name: "Cursor", Category: "Coding", Usage: "Daily · 5.2h avg", Cost: 40, Status: "active"},
+			{Name: "Claude Code", Category: "Coding", Usage: "Daily · 2.1h avg", Cost: 140, Status: "active"},
+			{Name: "Claude Teams", Category: "Chat seat", Usage: "Daily", Cost: 30, Status: "active"},
+			{Name: "Anthropic API", Category: "API key", Usage: "12k calls / 7d", Cost: 720, Status: "active"},
+			{Name: "OpenAI API", Category: "API key", Usage: "9k calls / 7d", Cost: 620, Status: "active"},
+			{Name: "Midjourney", Category: "Image", Usage: "Idle 18d", Cost: 32, Status: "idle"},
+		}
+
+		// Hardcoded sessions (from screens3.jsx:88-95)
+		resp.Sessions = []Session{
+			{ID: "s1", When: "12 min ago", Tool: "Claude Code", Model: "claude-sonnet-4.5", Tag: "billing-service", Duration: "34m", Tokens: 284_000, Cost: 16.8, Outcome: "PR #2841 merged"},
+			{ID: "s2", When: "1h ago", Tool: "Cursor", Model: "gpt-4o", Tag: "billing-service", Duration: "1h 12m", Tokens: 420_000, Cost: 11.2, Outcome: "code edits · not pushed"},
+			{ID: "s3", When: "3h ago", Tool: "Anthropic API", Model: "claude-opus-4", Tag: "data-pipeline", Duration: "—", Tokens: 180_000, Cost: 32.4, Outcome: "batch extraction"},
+			{ID: "s4", When: "Yesterday", Tool: "Claude Code", Model: "claude-sonnet-4.5", Tag: "auth-refactor", Duration: "2h 8m", Tokens: 860_000, Cost: 42.8, Outcome: "PR #2839 merged"},
+			{ID: "s5", When: "2 days ago", Tool: "ChatGPT", Model: "gpt-4o", Tag: "research", Duration: "—", Tokens: 62_000, Cost: 1.4, Outcome: "notes"},
+			{ID: "s6", When: "3 days ago", Tool: "Cursor", Model: "gpt-4.1-mini", Tag: "billing-service", Duration: "5h 22m", Tokens: 1_200_000, Cost: 8.2, Outcome: "PR #2837 merged"},
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(resp)
+	}
+}
+
+// sinApprox approximates sin(x) for the daily activity formula
+func sinApprox(x float64) float64 {
+	// Simple approximation: sin(x) ≈ x - x³/6 for small x
+	// For larger x, use a lookup table approach
+	x = x - float64(int(x/(2*3.14159)))*2*3.14159 // Normalize to [0, 2π]
+	if x < 0 {
+		x += 2 * 3.14159
+	}
+	// Use Taylor series approximation
+	return x - (x*x*x)/6 + (x*x*x*x*x)/120
+}
+
+// randomFloat returns a pseudo-random float between 0 and 1
+// Using a simple deterministic approach based on time
+func randomFloat() float64 {
+	// Simple pseudo-random using time
+	return float64((time.Now().UnixNano() % 1000)) / 1000.0
+}

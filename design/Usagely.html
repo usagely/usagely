@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=1280"/>
+<title>Usagely — FinOps for AI</title>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="data.js"></script>
+<script type="text/babel" src="primitives.jsx"></script>
+<script type="text/babel" src="shell.jsx"></script>
+<script type="text/babel" src="screens1.jsx"></script>
+<script type="text/babel" src="screens2.jsx"></script>
+<script type="text/babel" src="screens3.jsx"></script>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "edition": "oss",
+  "theme": "dark",
+  "density": "default",
+  "chart": "area",
+  "currency": "USD",
+  "layout": "sidebar"
+}/*EDITMODE-END*/;
+
+function App() {
+  const [authed, setAuthed] = useState(() => localStorage.getItem('lai.authed') === '1');
+  const [page, setPage] = useState(() => localStorage.getItem('lai.page') || 'dashboard');
+  const [tweaks, setTweaks] = useState(() => {
+    try { return { ...TWEAK_DEFAULTS, ...JSON.parse(localStorage.getItem('lai.tweaks') || '{}') }; }
+    catch { return TWEAK_DEFAULTS; }
+  });
+  const [showTweaks, setShowTweaks] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', tweaks.theme);
+    document.documentElement.setAttribute('data-density', tweaks.density);
+    localStorage.setItem('lai.tweaks', JSON.stringify(tweaks));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: tweaks }, '*');
+  }, [tweaks]);
+
+  useEffect(() => { localStorage.setItem('lai.page', page); }, [page]);
+  useEffect(() => { localStorage.setItem('lai.authed', authed ? '1' : '0'); }, [authed]);
+
+  useEffect(() => {
+    const onMsg = e => {
+      const d = e.data || {};
+      if (d.type === '__activate_edit_mode') setShowTweaks(true);
+      if (d.type === '__deactivate_edit_mode') setShowTweaks(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const go = id => {
+    if (id === '__logout') { setAuthed(false); return; }
+    setPage(id);
+    window.scrollTo({ top: 0 });
+  };
+
+  if (!authed) return <LoginPage onLogin={() => setAuthed(true)} />;
+
+  const isOSS = tweaks.edition === 'oss';
+  const baseId = page.startsWith('profile:') ? 'profile' : page;
+  const isLocked = isOSS && ENTERPRISE_ONLY.has(baseId);
+
+  let PageComp = DashboardPage;
+  let pageProps = { tweaks, go };
+
+  if (baseId === 'dashboard') PageComp = DashboardPage;
+  else if (baseId === 'teams') PageComp = TeamsPage;
+  else if (baseId === 'users') PageComp = PeoplePage;
+  else if (baseId === 'tools') PageComp = ToolsPage;
+  else if (baseId === 'models') PageComp = ModelsPage;
+  else if (baseId === 'budgets') PageComp = BudgetsPage;
+  else if (baseId === 'recommendations') PageComp = RecommendationsPage;
+  else if (baseId === 'shadow') PageComp = ShadowPage;
+  else if (baseId === 'approvals') PageComp = ApprovalsPage;
+  else if (baseId === 'forecast') PageComp = ForecastPage;
+  else if (baseId === 'anomalies') PageComp = AnomaliesPage;
+  else if (baseId === 'settings') PageComp = SettingsPage;
+  else if (baseId === 'profile') {
+    PageComp = ProfilePage;
+    pageProps.userEmail = page.split(':')[1];
+  }
+
+  const LOCK_MAP = {
+    shadow: 'Shadow AI detection',
+    forecast: 'AI spend forecasting',
+    approvals: 'Approval workflows',
+    recommendations: 'AI-powered recommendations',
+  };
+
+  return (
+    <div className="app" data-layout={tweaks.layout} data-screen-label={'Usagely · ' + page} data-edition={tweaks.edition}>
+      {tweaks.layout === 'sidebar'
+        ? <Sidebar current={baseId} onNav={go} tweaks={tweaks}/>
+        : <TopbarNav current={baseId} onNav={go} tweaks={tweaks}/>}
+      <main className="main">
+        <EditionBanner edition={tweaks.edition} setEdition={(e) => setTweaks(t => ({...t, edition: e}))}/>
+        <PageHeader current={baseId}/>
+        {isLocked
+          ? <LockedFeature name={LOCK_MAP[baseId] || baseId} description="Upgrade to Enterprise to unlock this module, or contribute to the roadmap on GitHub."/>
+          : <PageComp {...pageProps} />}
+      </main>
+      {showTweaks && <TweaksPanel tweaks={tweaks} setTweaks={setTweaks} onClose={() => setShowTweaks(false)} />}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App/>);
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+apiVersion: v2
+name: usagely
+description: FinOps-for-AI platform — measure, manage, and optimize AI tool usage
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: usagely
+    url: https://github.com/usagely/usagely
+home: https://github.com/usagely/usagely
+sources:
+  - https://github.com/usagely/usagely

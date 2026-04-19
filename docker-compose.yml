@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: usagely
+      POSTGRES_PASSWORD: usagely
+      POSTGRES_DB: usagely
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U usagely"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.api
+    command: ["/usr/local/bin/api", "--migrate-only"]
+    environment:
+      DATABASE_URL: postgres://usagely:usagely@db:5432/usagely?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.api
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://usagely:usagely@db:5432/usagely?sslmode=disable
+      PORT: "8080"
+      CORS_ORIGIN: http://localhost:3000
+      EDITION: oss
+      JWKS_URL: http://web:3000/api/auth/jwks
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.web
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+      AUTH_SECRET: change-me-in-production
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

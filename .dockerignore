@@ -1,0 +1,9 @@
+node_modules
+.next
+.git
+.sisyphus
+design
+*.md
+!apps/web/README.md
+server/cmd/seed
+apps/web/src/tests

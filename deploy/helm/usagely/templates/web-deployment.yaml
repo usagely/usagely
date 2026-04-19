@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "usagely.fullname" . }}-web
+  labels:
+    {{- include "usagely.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "usagely.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        {{- include "usagely.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: web
+    spec:
+      containers:
+        - name: web
+          image: "{{ .Values.image.registry }}{{ .Values.web.image.repository }}:{{ .Values.web.image.tag }}"
+          imagePullPolicy: {{ .Values.web.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.web.port }}
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: {{ printf "http://%s-api:%d" (include "usagely.fullname" .) (int .Values.api.port) | quote }}
+            - name: PORT
+              value: {{ .Values.web.port | quote }}
+            - name: HOSTNAME
+              value: "0.0.0.0"
+          envFrom:
+            - secretRef:
+                name: {{ include "usagely.fullname" . }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.web.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.web.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

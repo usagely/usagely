@@ -1,0 +1,35 @@
+{{- if .Values.migrate.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "usagely.fullname" . }}-migrate
+  labels:
+    {{- include "usagely.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "usagely.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.registry }}{{ .Values.migrate.image.repository }}:{{ .Values.migrate.image.tag }}"
+          command: ["/usr/local/bin/api", "--migrate-only"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "usagely.fullname" . }}-api
+            - secretRef:
+                name: {{ include "usagely.fullname" . }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

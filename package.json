@@ -1,0 +1,16 @@
+{
+  "name": "usagely",
+  "version": "0.0.1",
+  "description": "FinOps-for-AI platform",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "turbo test",
+    "lint": "turbo lint"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0"
+  }
+}

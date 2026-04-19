@@ -1,0 +1,97 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Light (default) */
+  --bg: oklch(0.99 0.004 90);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.975 0.004 90);
+  --surface-3: oklch(0.955 0.005 90);
+  --ink: oklch(0.18 0.012 270);
+  --ink-2: oklch(0.32 0.012 270);
+  --muted: oklch(0.55 0.01 270);
+  --muted-2: oklch(0.68 0.008 270);
+  --hairline: oklch(0.92 0.005 270);
+  --hairline-strong: oklch(0.86 0.008 270);
+
+  --accent: oklch(0.58 0.14 150);
+  --accent-ink: oklch(0.32 0.08 150);
+  --accent-bg: oklch(0.96 0.04 150);
+
+  --danger: oklch(0.58 0.19 25);
+  --danger-bg: oklch(0.96 0.04 25);
+  --warn: oklch(0.72 0.15 75);
+  --warn-bg: oklch(0.97 0.05 75);
+  --info: oklch(0.58 0.14 245);
+  --info-bg: oklch(0.96 0.04 245);
+
+  --chart-1: oklch(0.58 0.14 150);
+  --chart-2: oklch(0.58 0.14 245);
+  --chart-3: oklch(0.65 0.15 75);
+  --chart-4: oklch(0.58 0.17 320);
+  --chart-5: oklch(0.55 0.14 25);
+
+  --row: 40px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+}
+
+[data-theme="dark"] {
+  --bg: oklch(0.15 0.008 270);
+  --surface: oklch(0.185 0.009 270);
+  --surface-2: oklch(0.22 0.01 270);
+  --surface-3: oklch(0.26 0.012 270);
+  --ink: oklch(0.97 0.004 90);
+  --ink-2: oklch(0.86 0.005 90);
+  --muted: oklch(0.65 0.01 270);
+  --muted-2: oklch(0.52 0.01 270);
+  --hairline: oklch(0.28 0.012 270);
+  --hairline-strong: oklch(0.36 0.014 270);
+
+  --accent: oklch(0.72 0.16 150);
+  --accent-ink: oklch(0.85 0.1 150);
+  --accent-bg: oklch(0.28 0.06 150);
+
+  --danger: oklch(0.7 0.2 25);
+  --danger-bg: oklch(0.3 0.09 25);
+  --warn: oklch(0.82 0.16 75);
+  --warn-bg: oklch(0.3 0.08 75);
+  --info: oklch(0.72 0.15 245);
+  --info-bg: oklch(0.28 0.08 245);
+
+  --chart-1: oklch(0.72 0.16 150);
+  --chart-2: oklch(0.72 0.15 245);
+  --chart-3: oklch(0.78 0.16 75);
+  --chart-4: oklch(0.7 0.18 320);
+  --chart-5: oklch(0.68 0.16 25);
+}
+
+[data-density="compact"] { --row: 32px; }
+[data-density="comfortable"] { --row: 48px; }
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
+}
+.mono { font-family: var(--font-mono); font-feature-settings: "tnum", "zero"; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--hairline-strong); border-radius: 10px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--muted-2); }

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "usagely.fullname" . }}-web
+  labels:
+    {{- include "usagely.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.web.port }}
+      targetPort: {{ .Values.web.port }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "usagely.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: web

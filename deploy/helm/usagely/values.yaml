@@ -1,0 +1,80 @@
+# ── Global ──
+replicaCount: 2
+
+image:
+  registry: ""
+  pullSecrets: []
+
+# ── API (Go) ──
+api:
+  image:
+    repository: usagely/api
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  port: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  env: {}
+
+# ── Web (Next.js) ──
+web:
+  image:
+    repository: usagely/web
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  port: 3000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env: {}
+
+# ── PostgreSQL ──
+postgresql:
+  enabled: true
+  auth:
+    username: usagely
+    password: usagely
+    database: usagely
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClass: ""
+  external: {}
+
+# ── Migrations ──
+migrate:
+  enabled: true
+  image:
+    repository: usagely/api
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+# ── Ingress ──
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  tls: []
+
+# ── Edition ──
+edition: oss
+
+# ── Auth ──
+auth:
+  secret: "change-me-in-production"
+  jwksUrl: ""
+
+# ── Service ──
+service:
+  type: ClusterIP
+  annotations: {}
