@@ -131,6 +131,7 @@ func People(pool *pgxpool.Pool) http.HandlerFunc {
 
 		query += ` ORDER BY u.name ASC`
 
+		// tenancy:ok query is built above with WHERE u.org_id = $1
 		rows, err := pool.Query(ctx, query, args...)
 		if err != nil {
 			log.Printf("people: query error: %v", err)

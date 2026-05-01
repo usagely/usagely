@@ -63,6 +63,7 @@ func Tools(pool *pgxpool.Pool) http.HandlerFunc {
 
 		query += ` ORDER BY name ASC`
 
+		// tenancy:ok query is built above with WHERE org_id = $1
 		rows, err := pool.Query(ctx, query, args...)
 		if err != nil {
 			http.Error(w, "failed to fetch tools", http.StatusInternalServerError)

@@ -50,3 +50,6 @@ jobs:
 
       - name: make verify
         run: make verify
+
+      - name: Tenancy lint (handler raw SQL must include org_id)
+        run: cd server && go test -run TestTenancyLint ./internal/handler/...
