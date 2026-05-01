@@ -11,20 +11,19 @@ linters:
     - staticcheck
     - unused
 
-  settings:
-    staticcheck:
-      checks:
-        - inherit
-        - "-SA1029"
-        - "-ST1000"
-        - "-ST1003"
-        - "-ST1005"
-        - "-ST1020"
-        - "-ST1021"
-        - "-ST1022"
-
   exclusions:
     rules:
       - path: '_test\.go'
         linters:
           - unused
+      # SA1029: should not use built-in type string as key for value.
+      # Three pre-existing call sites in middleware and a test. Tracked as
+      # tech debt; suppress for now to keep the baseline green.
+      - linters:
+          - staticcheck
+        text: "SA1029:"
+      # ST1000: missing package doc comment. Repo-wide style cleanup, not
+      # in scope for an enforcement-only PR.
+      - linters:
+          - staticcheck
+        text: "ST1000:"
