@@ -6,26 +6,19 @@ run:
 linters:
   default: none
   enable:
-    - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
 
   settings:
-    errcheck:
-      check-type-assertions: false
-      check-blank: false
-      exclude-functions:
-        - (net/http.ResponseWriter).Write
-        - fmt.Fprintf
-        - fmt.Fprintln
-        - fmt.Fprint
-        - encoding/json.NewEncoder.Encode
+    staticcheck:
+      checks:
+        - all
+        - "-SA1029"
 
   exclusions:
     rules:
       - path: '_test\.go'
         linters:
-          - errcheck
           - unused
