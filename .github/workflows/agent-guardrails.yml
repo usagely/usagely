@@ -60,3 +60,49 @@ jobs:
 
       - name: Tenancy lint (handler raw SQL must include org_id)
         run: cd server && go test -run TestTenancyLint ./internal/handler/...
+
+      - name: Migration sanity (no edits to committed migrations)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          changed=$(git diff --name-only --diff-filter=MD "origin/$BASE_REF"...HEAD -- 'server/migrations/*.sql' || true)
+          if [ -n "$changed" ]; then
+            echo "::error::Pre-existing migration files were modified or deleted:"
+            echo "$changed" | sed 's/^/  - /'
+            echo "::error::Migrations are append-only. Add a new NNNN_*.up.sql + .down.sql pair instead."
+            exit 1
+          fi
+
+      - name: Forbidden patterns
+        run: |
+          set -euo pipefail
+          if grep -REn \
+              --exclude-dir=node_modules \
+              --exclude-dir=.git \
+              --exclude-dir=.next \
+              --exclude-dir=.turbo \
+              --exclude-dir=dist \
+              --exclude-dir=.sandcastle \
+              --exclude-dir=.pnpm-store \
+              --exclude=agent-guardrails.yml \
+              --exclude=GUARDRAILS.md \
+              --exclude=AGENTS.md \
+              --exclude='*.down.sql' \
+              -e '--no-verify' \
+              -e 'git push --force[^-]' \
+              -e 'git reset --hard' \
+              -e 'DROP TABLE' \
+              -e 'TRUNCATE TABLE' \
+              -e 'JWT_SECRET=[A-Za-z0-9]{16,}' \
+              -- . ; then
+            echo "::error::Forbidden pattern matched (see lines above). See GUARDRAILS.md."
+            exit 1
+          fi
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
