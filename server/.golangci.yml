@@ -1,0 +1,31 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+  settings:
+    errcheck:
+      check-type-assertions: false
+      check-blank: false
+      exclude-functions:
+        - (net/http.ResponseWriter).Write
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Fprint
+        - encoding/json.NewEncoder.Encode
+
+  exclusions:
+    rules:
+      - path: '_test\.go'
+        linters:
+          - errcheck
+          - unused

@@ -48,6 +48,13 @@ jobs:
       - name: Install workspace deps
         run: pnpm install --frozen-lockfile
 
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.6.1
+          working-directory: server
+          args: --timeout=5m
+
       - name: make verify
         run: make verify
 
