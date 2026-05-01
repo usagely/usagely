@@ -124,6 +124,8 @@ usagely/
 
 ## Contributing
 
+If you are an AI coding agent, read [AGENTS.md](AGENTS.md) before making changes.
+
 We welcome contributions! Here's how to get started:
 
 1. Check [Good First Issues](https://github.com/usagely/usagely/labels/good%20first%20issue) for beginner-friendly tasks
