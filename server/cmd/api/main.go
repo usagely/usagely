@@ -41,6 +41,7 @@ func main() {
 	r.Use(middleware.Recovery)
 	r.Use(middleware.CORS(cfg.CORSOrigin))
 	r.Get("/healthz", handler.Health)
+	r.Get("/healthz/ready", handler.Ready(pool))
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(authMiddleware.Handler)
