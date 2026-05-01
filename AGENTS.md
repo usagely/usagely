@@ -131,6 +131,8 @@ usagely/
 
 ## How to verify your change
 
+Single command from repo root: `make verify` (frontend test + build, then backend vet + test). Lint and a few other checks are deferred to their own PRs — see the comment block above the `verify:` target in the Makefile.
+
 **Backend** (from `server/`):
 ```bash
 go vet ./... && go test ./...
