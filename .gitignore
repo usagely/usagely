@@ -55,10 +55,8 @@ next-env.d.ts
 .claude-mem/
 .aider*
 CLAUDE.md
-AGENTS.md
 
 # Docs-per-directory agent metadata
-apps/**/AGENTS.md
 apps/**/CLAUDE.md
 
 # Misc
