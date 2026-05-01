@@ -4,8 +4,13 @@
 
 **FinOps-for-AI platform** — monitor, control, and optimize your organization's spending on AI tools and LLM services.
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
-[![Discord](https://img.shields.io/discord/vkqcKrYr?color=5865F2&label=Discord)](https://discord.gg/vkqcKrYr)
+[![CI](https://github.com/usagely/usagely/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/usagely/usagely/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/usagely/usagely/branch/main/graph/badge.svg)](https://codecov.io/gh/usagely/usagely)
+[![Go Report Card](https://goreportcard.com/badge/github.com/usagely/usagely/server)](https://goreportcard.com/report/github.com/usagely/usagely/server)
+[![Latest Release](https://img.shields.io/github/v/release/usagely/usagely?include_prereleases&label=release)](https://github.com/usagely/usagely/releases)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL_3.0-blue.svg)](LICENSE)
+[![gofmt](https://img.shields.io/badge/code_style-gofmt-00ADD8?logo=go&logoColor=white)](https://pkg.go.dev/cmd/gofmt)
+[![eslint](https://img.shields.io/badge/code_style-eslint-4B32C3?logo=eslint&logoColor=white)](https://eslint.org)
 
 [Getting Started](#getting-started) · [Features](#features) · [Tech Stack](#tech-stack) · [Contributing](#contributing) · [License](#license)
 
@@ -141,7 +146,6 @@ We welcome contributions! Here's how to get started:
 2. Read our contributing guidelines (coming soon)
 3. Fork the repo, create a feature branch, and submit a PR
 
-Join our [Discord](https://discord.gg/vkqcKrYr) for discussions and support.
 
 ## License
 

@@ -1,4 +1,4 @@
-name: agent-guardrails
+name: ci
 
 on:
   pull_request:
@@ -48,6 +48,16 @@ jobs:
       - name: Install workspace deps
         run: pnpm install --frozen-lockfile
 
+      - name: gofmt check
+        run: |
+          set -euo pipefail
+          out=$(gofmt -l server/ 2>&1)
+          if [ -n "$out" ]; then
+            echo "::error::gofmt found unformatted files:"
+            echo "$out" | sed 's/^/  - /'
+            exit 1
+          fi
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
@@ -55,8 +65,26 @@ jobs:
           working-directory: server
           args: --timeout=5m
 
-      - name: make verify
-        run: make verify
+      - name: Frontend tests with coverage
+        run: pnpm --filter web test --run --coverage --coverage.reporter=lcov
+
+      - name: Frontend build
+        run: pnpm --filter web build
+
+      - name: Backend tests with coverage
+        working-directory: server
+        run: go test ./... -coverprofile=../coverage-go.out -covermode=atomic
+
+      - name: Backend vet
+        working-directory: server
+        run: go vet ./...
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage-go.out,./apps/web/coverage/lcov.info
+          flags: backend,frontend
+          fail_ci_if_error: false
 
       - name: Tenancy lint (handler raw SQL must include org_id)
         run: cd server && go test -run TestTenancyLint ./internal/handler/...
@@ -87,7 +115,7 @@ jobs:
               --exclude-dir=dist \
               --exclude-dir=.sandcastle \
               --exclude-dir=.pnpm-store \
-              --exclude=agent-guardrails.yml \
+              --exclude=ci.yml \
               --exclude=GUARDRAILS.md \
               --exclude=AGENTS.md \
               --exclude='*.down.sql' \
