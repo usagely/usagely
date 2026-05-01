@@ -133,7 +133,7 @@ for the contributor guide. This workflow is entirely optional — `make dev`,
 
 ## Contributing
 
-If you are an AI coding agent, read [AGENTS.md](AGENTS.md) before making changes.
+If you are an AI coding agent, read [AGENTS.md](AGENTS.md) and [GUARDRAILS.md](GUARDRAILS.md) before making changes.
 
 We welcome contributions! Here's how to get started:
 

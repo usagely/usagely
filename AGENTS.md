@@ -148,5 +148,6 @@ make build
 
 ## Pointers
 
+- [`GUARDRAILS.md`](GUARDRAILS.md) — hard fail-closed constraints. Read at session start; never delete a Sign.
 - [`README.md`](README.md) — project overview, getting started, environment variables.
-- Scoped AGENTS.md files (`server/`, `apps/web/`, `ee/`, `server/migrations/`) and `GUARDRAILS.md` will follow in subsequent PRs of #1.
+- Scoped `AGENTS.md` files under `server/`, `apps/web/`, `ee/`, `server/migrations/`, and `server/internal/db/` for directory-specific rules.
