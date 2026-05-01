@@ -8,9 +8,20 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "test": "turbo test",
-    "lint": "turbo lint"
+    "lint": "turbo lint",
+    "sandcastle": "tsx .sandcastle/main.mts"
   },
   "devDependencies": {
+    "@ai-hero/sandcastle": "0.5.7",
+    "tsx": "4.21.0",
     "turbo": "^2.0.0"
+  },
+  "pnpm": {
+    "peerDependencyRules": {
+      "ignoreMissing": [
+        "@vercel/sandbox",
+        "@daytona/sdk"
+      ]
+    }
   }
 }

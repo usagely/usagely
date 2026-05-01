@@ -122,6 +122,15 @@ usagely/
 └── pnpm-workspace.yaml
 ```
 
+## Sandboxed AI Agent Workflow (Optional)
+
+Maintainers can hand a task to a Claude Code agent running inside an isolated
+Docker sandbox preloaded with the Usagely toolchain (Go 1.25, Node 22, pnpm 9,
+PostgreSQL client, GitHub CLI). The agent's commits are merged back into your
+local `HEAD` when the run finishes. See [`.sandcastle/README.md`](./.sandcastle/README.md)
+for the contributor guide. This workflow is entirely optional — `make dev`,
+`make build`, `make test`, and CI do not depend on it.
+
 ## Contributing
 
 If you are an AI coding agent, read [AGENTS.md](AGENTS.md) before making changes.
