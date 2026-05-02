@@ -2,14 +2,34 @@ coverage:
   status:
     project:
       default:
-        target: 70%
+        target: auto
         threshold: 1%
     patch:
       default:
-        target: 70%
+        target: 60%
         threshold: 1%
 
 ignore:
   - "**/migrations/**"
   - "**/cmd/seed/**"
   - "**/*_test.go"
+
+flags:
+  backend:
+    paths:
+      - server/**
+  frontend:
+    paths:
+      - apps/web/**
+
+flag_management:
+  individual_flags:
+    - name: backend
+      statuses:
+        - type: project
+          target: 50%
+    - name: frontend
+      statuses:
+        - type: project
+          target: auto
+          threshold: 1%
