@@ -30,7 +30,47 @@ type ForecastResponse struct {
 	Scenarios       []ForecastScenario `json:"scenarios"`
 }
 
-func Forecast(pool *pgxpool.Pool) http.HandlerFunc {
+type ForecastRepo interface {
+	ListDailySpend(ctx context.Context, orgID string) ([]DailySpend, error)
+}
+
+type pgxForecastRepo struct {
+	pool *pgxpool.Pool
+}
+
+func NewPgxForecastRepo(pool *pgxpool.Pool) ForecastRepo {
+	if pool == nil {
+		return nil
+	}
+	return &pgxForecastRepo{pool: pool}
+}
+
+func (r *pgxForecastRepo) ListDailySpend(ctx context.Context, orgID string) ([]DailySpend, error) {
+	// tenancy:ok query filters by org_id = $1
+	rows, err := r.pool.Query(ctx, `
+		SELECT date, total_value FROM usage_daily
+		WHERE org_id = $1
+		ORDER BY date ASC
+		LIMIT 60
+	`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var hist []DailySpend
+	for rows.Next() {
+		var ds DailySpend
+		if err := rows.Scan(&ds.Date, &ds.Value); err != nil {
+			return nil, err
+		}
+		hist = append(hist, ds)
+	}
+
+	return hist, nil
+}
+
+func Forecast(repo ForecastRepo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
@@ -48,34 +88,21 @@ func Forecast(pool *pgxpool.Pool) http.HandlerFunc {
 			Scenarios:       []ForecastScenario{},
 		}
 
-		if pool == nil {
+		if repo == nil {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(resp)
 			return
 		}
 
-		rows, err := pool.Query(ctx, `
-			SELECT date, total_value FROM usage_daily
-			WHERE org_id = $1
-			ORDER BY date ASC
-			LIMIT 60
-		`, orgID)
+		hist, err := repo.ListDailySpend(ctx, orgID)
 		if err != nil {
 			http.Error(w, "failed to fetch daily spend", http.StatusInternalServerError)
 			return
 		}
-		defer rows.Close()
 
-		var hist []DailySpend
-		for rows.Next() {
-			var ds DailySpend
-			if err := rows.Scan(&ds.Date, &ds.Value); err != nil {
-				http.Error(w, "failed to scan daily spend", http.StatusInternalServerError)
-				return
-			}
-			hist = append(hist, ds)
+		if hist != nil {
+			resp.HistoricalSpend = hist
 		}
-		resp.HistoricalSpend = hist
 
 		if len(hist) == 0 {
 			w.Header().Set("Content-Type", "application/json")
