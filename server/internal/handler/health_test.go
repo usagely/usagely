@@ -3,13 +3,11 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"strings"
 	"testing"
-	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestHealth(t *testing.T) {
@@ -36,29 +34,21 @@ func TestHealth(t *testing.T) {
 	}
 }
 
-// TestReady covers the happy path only. The failure path (503 when the DB is
-// unreachable) is not unit-tested because pgxpool.Pool is a concrete type that
-// requires a live Postgres connection; there is no test-double infrastructure
-// in this project yet.
-func TestReady(t *testing.T) {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		t.Skip("DATABASE_URL not set — skipping readiness probe integration test")
-	}
+type mockPingable struct {
+	err error
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+func (m *mockPingable) Ping(_ context.Context) error {
+	return m.err
+}
 
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("failed to create pool: %v", err)
-	}
-	defer pool.Close()
+func TestReadyOK(t *testing.T) {
+	mock := &mockPingable{}
 
 	req := httptest.NewRequest("GET", "/healthz/ready", nil)
 	w := httptest.NewRecorder()
 
-	Ready(pool)(w, req)
+	Ready(mock)(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", w.Code)
@@ -71,5 +61,57 @@ func TestReady(t *testing.T) {
 
 	if resp.Status != "ready" {
 		t.Errorf("expected status 'ready', got '%s'", resp.Status)
+	}
+}
+
+func TestReadyError(t *testing.T) {
+	mock := &mockPingable{err: errors.New("connection refused")}
+
+	req := httptest.NewRequest("GET", "/healthz/ready", nil)
+	w := httptest.NewRecorder()
+
+	Ready(mock)(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected status 503, got %d", w.Code)
+	}
+
+	var resp ReadyResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.Status != "not ready" {
+		t.Errorf("expected status 'not ready', got '%s'", resp.Status)
+	}
+	if !strings.Contains(resp.Error, "connection refused") {
+		t.Errorf("expected error to contain 'connection refused', got '%s'", resp.Error)
+	}
+}
+
+func TestReadyNilPingable(t *testing.T) {
+	req := httptest.NewRequest("GET", "/healthz/ready", nil)
+	w := httptest.NewRecorder()
+
+	Ready(nil)(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected status 503, got %d", w.Code)
+	}
+
+	var resp ReadyResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.Status != "not ready" {
+		t.Errorf("expected status 'not ready', got '%s'", resp.Status)
+	}
+}
+
+func TestNewPgxPingableNil(t *testing.T) {
+	p := NewPgxPingable(nil)
+	if p != nil {
+		t.Error("expected nil pingable when pool is nil")
 	}
 }

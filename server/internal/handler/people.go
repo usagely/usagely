@@ -84,75 +84,125 @@ type ProfileResponse struct {
 	Sessions      []Session       `json:"sessions"`
 }
 
-// People returns a handler that lists all users with optional team filter
-func People(pool *pgxpool.Pool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
+// PeopleRepo abstracts people and profile queries for testing.
+type PeopleRepo interface {
+	ListPeople(ctx context.Context, orgID string, team string) ([]User, error)
+	GetProfile(ctx context.Context, orgID string, email string) (*User, error)
+}
 
+type pgxPeopleRepo struct {
+	pool *pgxpool.Pool
+}
+
+// NewPgxPeopleRepo returns a PeopleRepo backed by pgxpool, or nil when pool is nil.
+func NewPgxPeopleRepo(pool *pgxpool.Pool) PeopleRepo {
+	if pool == nil {
+		return nil
+	}
+	return &pgxPeopleRepo{pool: pool}
+}
+
+func (r *pgxPeopleRepo) ListPeople(ctx context.Context, orgID string, team string) ([]User, error) {
+	query := `
+		SELECT u.id, u.name, u.email, t.name, u.role,
+			   COALESCE(uu.tokens, 0), COALESCE(uu.cost_usd, 0),
+			   COALESCE(uu.prs_merged, 0), COALESCE(uu.top_tool, '')
+		FROM users u
+		LEFT JOIN teams t ON u.team_id = t.id
+		LEFT JOIN user_usage uu ON uu.user_id = u.id
+		WHERE u.org_id = $1
+	`
+	args := []interface{}{orgID}
+
+	if team != "" && team != "All" {
+		query += ` AND t.name = $2`
+		args = append(args, team)
+	}
+
+	query += ` ORDER BY u.name ASC`
+
+	// tenancy:ok query is built above with WHERE u.org_id = $1
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var u User
+		var teamName *string
+		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &teamName, &u.Role,
+			&u.Tokens, &u.Cost, &u.PRs, &u.TopTool); err != nil {
+			return nil, err
+		}
+		if teamName != nil {
+			u.Team = *teamName
+		}
+		users = append(users, u)
+	}
+
+	return users, nil
+}
+
+func (r *pgxPeopleRepo) GetProfile(ctx context.Context, orgID string, email string) (*User, error) {
+	row := r.pool.QueryRow(ctx, `
+		SELECT u.id, u.name, u.email, t.name, u.role,
+			   COALESCE(uu.tokens, 0), COALESCE(uu.cost_usd, 0),
+			   COALESCE(uu.prs_merged, 0), COALESCE(uu.top_tool, '')
+		FROM users u
+		LEFT JOIN teams t ON u.team_id = t.id
+		LEFT JOIN user_usage uu ON uu.user_id = u.id
+		WHERE u.org_id = $1 AND u.email = $2
+	`, orgID, email)
+
+	var u User
+	var teamName *string
+	if err := row.Scan(&u.ID, &u.Name, &u.Email, &teamName, &u.Role,
+		&u.Tokens, &u.Cost, &u.PRs, &u.TopTool); err != nil {
+		return nil, err
+	}
+	if teamName != nil {
+		u.Team = *teamName
+	}
+
+	return &u, nil
+}
+
+// People returns a handler that lists all users with optional team filter
+func People(repo PeopleRepo) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		resp := &PeopleResponse{
 			Users: []User{},
 		}
 
-		// If no pool, return empty response
-		if pool == nil {
+		if repo == nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(resp)
 			return
 		}
 
-		// Get org_id from context (set by auth middleware)
 		orgID, ok := r.Context().Value("org_id").(string)
 		if !ok || orgID == "" {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
-		// Get team filter from query params
 		team := r.URL.Query().Get("team")
 
-		// Build query
-		query := `
-			SELECT u.id, u.name, u.email, t.name, u.role,
-				   COALESCE(uu.tokens, 0), COALESCE(uu.cost_usd, 0),
-				   COALESCE(uu.prs_merged, 0), COALESCE(uu.top_tool, '')
-			FROM users u
-			LEFT JOIN teams t ON u.team_id = t.id
-			LEFT JOIN user_usage uu ON uu.user_id = u.id
-			WHERE u.org_id = $1
-		`
-		args := []interface{}{orgID}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
 
-		if team != "" && team != "All" {
-			query += ` AND t.name = $2`
-			args = append(args, team)
-		}
-
-		query += ` ORDER BY u.name ASC`
-
-		// tenancy:ok query is built above with WHERE u.org_id = $1
-		rows, err := pool.Query(ctx, query, args...)
+		users, err := repo.ListPeople(ctx, orgID, team)
 		if err != nil {
 			log.Printf("people: query error: %v", err)
 			http.Error(w, "failed to fetch users", http.StatusInternalServerError)
 			return
 		}
-		defer rows.Close()
 
-		for rows.Next() {
-			var u User
-			var teamName *string
-			if err := rows.Scan(&u.ID, &u.Name, &u.Email, &teamName, &u.Role,
-				&u.Tokens, &u.Cost, &u.PRs, &u.TopTool); err != nil {
-				log.Printf("people: scan error: %v", err)
-				http.Error(w, "failed to scan user", http.StatusInternalServerError)
-				return
-			}
-			if teamName != nil {
-				u.Team = *teamName
-			}
-			resp.Users = append(resp.Users, u)
+		if users != nil {
+			resp.Users = users
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -162,11 +212,8 @@ func People(pool *pgxpool.Pool) http.HandlerFunc {
 }
 
 // Profile returns a handler that fetches a user's full profile by email
-func Profile(pool *pgxpool.Pool) http.HandlerFunc {
+func Profile(repo PeopleRepo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
 		email := r.PathValue("email")
 		if email == "" {
 			http.Error(w, "email required", http.StatusBadRequest)
@@ -185,41 +232,37 @@ func Profile(pool *pgxpool.Pool) http.HandlerFunc {
 			Sessions:      []Session{},
 		}
 
-		// If no pool, return empty response
-		if pool == nil {
+		if repo == nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(resp)
 			return
 		}
 
-		// Get org_id from context
 		orgID, ok := r.Context().Value("org_id").(string)
 		if !ok || orgID == "" {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
-		// Fetch user by email
-		row := pool.QueryRow(ctx, `
-			SELECT u.id, u.name, u.email, t.name, u.role,
-				   COALESCE(uu.tokens, 0), COALESCE(uu.cost_usd, 0),
-				   COALESCE(uu.prs_merged, 0), COALESCE(uu.top_tool, '')
-			FROM users u
-			LEFT JOIN teams t ON u.team_id = t.id
-			LEFT JOIN user_usage uu ON uu.user_id = u.id
-			WHERE u.org_id = $1 AND u.email = $2
-		`, orgID, email)
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
 
-		var teamName *string
-		if err := row.Scan(&resp.ID, &resp.Name, &resp.Email, &teamName, &resp.Role,
-			&resp.Tokens, &resp.Cost, &resp.PRs, &resp.TopTool); err != nil {
+		u, err := repo.GetProfile(ctx, orgID, email)
+		if err != nil {
 			http.Error(w, "user not found", http.StatusNotFound)
 			return
 		}
-		if teamName != nil {
-			resp.Team = *teamName
-		}
+
+		resp.ID = u.ID
+		resp.Name = u.Name
+		resp.Email = u.Email
+		resp.Team = u.Team
+		resp.Role = u.Role
+		resp.Tokens = u.Tokens
+		resp.Cost = u.Cost
+		resp.PRs = u.PRs
+		resp.TopTool = u.TopTool
 
 		// Generate daily activity (30 days of synthetic data)
 		now := time.Now()
