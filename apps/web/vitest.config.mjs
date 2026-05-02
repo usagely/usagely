@@ -4,6 +4,8 @@ import { defineConfig, defineProject } from 'vitest/config';
 // test file to switch its environment regardless of which project it
 // belongs to.
 
+const alias = { '@/': new URL('./', import.meta.url).pathname };
+
 export default defineConfig({
   test: {
     coverage: {
@@ -23,6 +25,7 @@ export default defineConfig({
     },
     projects: [
       defineProject({
+        resolve: { alias },
         test: {
           name: 'node',
           environment: 'node',
@@ -34,6 +37,7 @@ export default defineConfig({
         },
       }),
       defineProject({
+        resolve: { alias },
         test: {
           name: 'jsdom',
           environment: 'jsdom',
