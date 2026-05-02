@@ -47,3 +47,14 @@ When the task is complete, commit your changes with a descriptive message and
 output `<promise>COMPLETE</promise>` on its own line to signal early
 termination. If you cannot finish the task, output a short explanation and
 the same `<promise>COMPLETE</promise>` marker so the run terminates cleanly.
+
+# Commit message hygiene (mandatory)
+
+- Do NOT add `Co-Authored-By: Claude <...>` (or any other AI / tool
+  attribution) to commit messages. The host's contributor authorship is the
+  only attribution that should appear.
+- Do NOT add `Generated-by:`, `Signed-off-by: Claude`, `Created-with:`, or any
+  similar trailer that identifies the assistant.
+- Do NOT include emojis, marketing language, or model identifiers
+  (`claude-opus-4-6`, `claude-3-5-sonnet`, etc.) in the commit subject or body.
+- The commit body should describe what changed and why — nothing more.
