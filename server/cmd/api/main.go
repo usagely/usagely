@@ -46,7 +46,7 @@ func main() {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(authMiddleware.Handler)
 		r.Use(middleware.EditionGate(cfg.Edition))
-		r.Get("/dashboard", handler.Dashboard(pool))
+		r.Get("/dashboard", handler.Dashboard(handler.NewPgxDashboardRepo(pool)))
 		r.Get("/teams", handler.Teams(handler.NewPgxTeamsRepo(pool)))
 		r.Get("/budgets", handler.Budgets(handler.NewPgxBudgetsRepo(pool)))
 		r.Get("/anomalies", handler.Anomalies(handler.NewPgxAnomaliesRepo(pool)))

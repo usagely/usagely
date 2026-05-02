@@ -63,18 +63,168 @@ type DashboardResponse struct {
 	TeamsSpend      []TeamSpend       `json:"teams_spend"`
 }
 
+type DailySpendRow struct {
+	Date  time.Time
+	Value float64
+}
+
+type DashboardTeamSpendRow struct {
+	ID      string
+	Name    string
+	Members int
+	Spend   float64
+	PerUser float64
+}
+
+type DashboardRepo interface {
+	GetDailySpend(ctx context.Context, orgID string) ([]DailySpendRow, error)
+	GetActiveToolsCount(ctx context.Context, orgID string) (int, error)
+	GetActiveUsersCount(ctx context.Context, orgID string) (int, error)
+	ListAnomalies(ctx context.Context, orgID string) ([]Anomaly, error)
+	ListRecommendations(ctx context.Context, orgID string) ([]Recommendation, error)
+	ListTeamsSpend(ctx context.Context, orgID string) ([]DashboardTeamSpendRow, error)
+}
+
+type pgxDashboardRepo struct {
+	pool *pgxpool.Pool
+}
+
+func NewPgxDashboardRepo(pool *pgxpool.Pool) DashboardRepo {
+	if pool == nil {
+		return nil
+	}
+	return &pgxDashboardRepo{pool: pool}
+}
+
+func (r *pgxDashboardRepo) GetDailySpend(ctx context.Context, orgID string) ([]DailySpendRow, error) {
+	// tenancy:ok
+	rows, err := r.pool.Query(ctx, `
+		SELECT date, total_value FROM usage_daily
+		WHERE org_id = $1
+		ORDER BY date ASC
+		LIMIT 60
+	`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []DailySpendRow
+	for rows.Next() {
+		var row DailySpendRow
+		if err := rows.Scan(&row.Date, &row.Value); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, nil
+}
+
+func (r *pgxDashboardRepo) GetActiveToolsCount(ctx context.Context, orgID string) (int, error) {
+	// tenancy:ok
+	var count int
+	err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM tools
+		WHERE org_id = $1 AND status = 'approved'
+	`, orgID).Scan(&count)
+	return count, err
+}
+
+func (r *pgxDashboardRepo) GetActiveUsersCount(ctx context.Context, orgID string) (int, error) {
+	// tenancy:ok
+	var count int
+	err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM users
+		WHERE org_id = $1
+	`, orgID).Scan(&count)
+	return count, err
+}
+
+func (r *pgxDashboardRepo) ListAnomalies(ctx context.Context, orgID string) ([]Anomaly, error) {
+	// tenancy:ok
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, title, body, severity, team_name, owner_name
+		FROM anomalies
+		WHERE org_id = $1
+		ORDER BY detected_at DESC
+		LIMIT 4
+	`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []Anomaly
+	for rows.Next() {
+		var a Anomaly
+		if err := rows.Scan(&a.ID, &a.Title, &a.Body, &a.Severity, &a.Team, &a.Owner); err != nil {
+			return nil, err
+		}
+		result = append(result, a)
+	}
+	return result, nil
+}
+
+func (r *pgxDashboardRepo) ListRecommendations(ctx context.Context, orgID string) ([]Recommendation, error) {
+	// tenancy:ok
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, title, reason, savings_usd, confidence, scope
+		FROM recommendations
+		WHERE org_id = $1
+		ORDER BY savings_usd DESC
+		LIMIT 4
+	`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []Recommendation
+	for rows.Next() {
+		var rec Recommendation
+		if err := rows.Scan(&rec.ID, &rec.Title, &rec.Reason, &rec.Savings, &rec.Confidence, &rec.Scope); err != nil {
+			return nil, err
+		}
+		result = append(result, rec)
+	}
+	return result, nil
+}
+
+func (r *pgxDashboardRepo) ListTeamsSpend(ctx context.Context, orgID string) ([]DashboardTeamSpendRow, error) {
+	// tenancy:ok
+	rows, err := r.pool.Query(ctx, `
+		SELECT t.id, t.name, COUNT(u.id) as members,
+			   COALESCE(SUM(uu.cost_usd), 0) as spend,
+			   CASE WHEN COUNT(u.id) > 0 THEN COALESCE(SUM(uu.cost_usd), 0) / COUNT(u.id) ELSE 0 END as per_user
+		FROM teams t
+		LEFT JOIN users u ON u.team_id = t.id
+		LEFT JOIN user_usage uu ON uu.user_id = u.id
+		WHERE t.org_id = $1
+		GROUP BY t.id, t.name
+		ORDER BY spend DESC
+		LIMIT 6
+	`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []DashboardTeamSpendRow
+	for rows.Next() {
+		var ts DashboardTeamSpendRow
+		if err := rows.Scan(&ts.ID, &ts.Name, &ts.Members, &ts.Spend, &ts.PerUser); err != nil {
+			return nil, err
+		}
+		result = append(result, ts)
+	}
+	return result, nil
+}
+
 // Dashboard returns a handler that fetches all dashboard data
-func Dashboard(pool *pgxpool.Pool) http.HandlerFunc {
+func Dashboard(repo DashboardRepo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
-
-		// Get org_id from context (set by auth middleware)
-		orgID, ok := r.Context().Value("org_id").(string)
-		if !ok || orgID == "" {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
 
 		resp := &DashboardResponse{
 			DailySpend:      []DailySpend{},
@@ -84,26 +234,27 @@ func Dashboard(pool *pgxpool.Pool) http.HandlerFunc {
 			TeamsSpend:      []TeamSpend{},
 		}
 
-		// If no pool, return empty response
-		if pool == nil {
+		// If no repo, return empty response
+		if repo == nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(resp)
 			return
 		}
 
+		// Get org_id from context (set by auth middleware)
+		orgID, ok := r.Context().Value("org_id").(string)
+		if !ok || orgID == "" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
 		// Fetch daily spend (last 60 days)
-		dailyRows, err := pool.Query(ctx, `
-			SELECT date, total_value FROM usage_daily
-			WHERE org_id = $1
-			ORDER BY date ASC
-			LIMIT 60
-		`, orgID)
+		dailyRows, err := repo.GetDailySpend(ctx, orgID)
 		if err != nil {
 			http.Error(w, "failed to fetch daily spend", http.StatusInternalServerError)
 			return
 		}
-		defer dailyRows.Close()
 
 		var mtdSpend float64
 		var prevMtdSpend float64
@@ -112,24 +263,17 @@ func Dashboard(pool *pgxpool.Pool) http.HandlerFunc {
 		currentYear := today.Year()
 		daysElapsed := today.Day()
 
-		for dailyRows.Next() {
-			var date time.Time
-			var value float64
-			if err := dailyRows.Scan(&date, &value); err != nil {
-				http.Error(w, "failed to scan daily spend", http.StatusInternalServerError)
-				return
-			}
-
-			dateStr := date.Format("2006-01-02")
+		for _, row := range dailyRows {
+			dateStr := row.Date.Format("2006-01-02")
 			resp.DailySpend = append(resp.DailySpend, DailySpend{
 				Date:  dateStr,
-				Value: value,
+				Value: row.Value,
 			})
 
-			if date.Month() == currentMonth && date.Year() == currentYear {
-				mtdSpend += value
-			} else if date.Month() == time.Month((int(currentMonth)-2)%12+1) && date.Year() == currentYear {
-				prevMtdSpend += value
+			if row.Date.Month() == currentMonth && row.Date.Year() == currentYear {
+				mtdSpend += row.Value
+			} else if row.Date.Month() == time.Month((int(currentMonth)-2)%12+1) && row.Date.Year() == currentYear {
+				prevMtdSpend += row.Value
 			}
 		}
 
@@ -149,24 +293,20 @@ func Dashboard(pool *pgxpool.Pool) http.HandlerFunc {
 		resp.UsersDelta = 0.03      // Hardcoded from design
 
 		// Fetch active tools (status = 'approved')
-		toolRow := pool.QueryRow(ctx, `
-			SELECT COUNT(*) FROM tools
-			WHERE org_id = $1 AND status = 'approved'
-		`, orgID)
-		if err := toolRow.Scan(&resp.ActiveTools); err != nil {
+		activeTools, err := repo.GetActiveToolsCount(ctx, orgID)
+		if err != nil {
 			http.Error(w, "failed to fetch active tools", http.StatusInternalServerError)
 			return
 		}
+		resp.ActiveTools = activeTools
 
 		// Fetch active users
-		userRow := pool.QueryRow(ctx, `
-			SELECT COUNT(*) FROM users
-			WHERE org_id = $1
-		`, orgID)
-		if err := userRow.Scan(&resp.ActiveUsers); err != nil {
+		activeUsers, err := repo.GetActiveUsersCount(ctx, orgID)
+		if err != nil {
 			http.Error(w, "failed to fetch active users", http.StatusInternalServerError)
 			return
 		}
+		resp.ActiveUsers = activeUsers
 
 		// Hardcoded spend by category (from design data)
 		resp.SpendByCategory = []SpendByCategory{
@@ -178,85 +318,47 @@ func Dashboard(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		// Fetch anomalies (last 4 by detected_at DESC)
-		anomalyRows, err := pool.Query(ctx, `
-			SELECT id, title, body, severity, team_name, owner_name
-			FROM anomalies
-			WHERE org_id = $1
-			ORDER BY detected_at DESC
-			LIMIT 4
-		`, orgID)
+		anomalies, err := repo.ListAnomalies(ctx, orgID)
 		if err != nil {
 			http.Error(w, "failed to fetch anomalies", http.StatusInternalServerError)
 			return
 		}
-		defer anomalyRows.Close()
-
-		for anomalyRows.Next() {
-			var a Anomaly
-			if err := anomalyRows.Scan(&a.ID, &a.Title, &a.Body, &a.Severity, &a.Team, &a.Owner); err != nil {
-				http.Error(w, "failed to scan anomaly", http.StatusInternalServerError)
-				return
-			}
-			resp.Anomalies = append(resp.Anomalies, a)
+		if len(anomalies) > 0 {
+			resp.Anomalies = anomalies
 		}
 
 		// Fetch recommendations (first 4 by savings_usd DESC)
-		recRows, err := pool.Query(ctx, `
-			SELECT id, title, reason, savings_usd, confidence, scope
-			FROM recommendations
-			WHERE org_id = $1
-			ORDER BY savings_usd DESC
-			LIMIT 4
-		`, orgID)
+		recommendations, err := repo.ListRecommendations(ctx, orgID)
 		if err != nil {
 			http.Error(w, "failed to fetch recommendations", http.StatusInternalServerError)
 			return
 		}
-		defer recRows.Close()
-
-		for recRows.Next() {
-			var r Recommendation
-			if err := recRows.Scan(&r.ID, &r.Title, &r.Reason, &r.Savings, &r.Confidence, &r.Scope); err != nil {
-				http.Error(w, "failed to scan recommendation", http.StatusInternalServerError)
-				return
-			}
-			resp.Recommendations = append(resp.Recommendations, r)
+		if len(recommendations) > 0 {
+			resp.Recommendations = recommendations
 		}
 
 		// Fetch teams spend (top 6 by spend)
-		teamRows, err := pool.Query(ctx, `
-			SELECT t.id, t.name, COUNT(u.id) as members,
-				   COALESCE(SUM(uu.cost_usd), 0) as spend,
-				   CASE WHEN COUNT(u.id) > 0 THEN COALESCE(SUM(uu.cost_usd), 0) / COUNT(u.id) ELSE 0 END as per_user
-			FROM teams t
-			LEFT JOIN users u ON u.team_id = t.id
-			LEFT JOIN user_usage uu ON uu.user_id = u.id
-			WHERE t.org_id = $1
-			GROUP BY t.id, t.name
-			ORDER BY spend DESC
-			LIMIT 6
-		`, orgID)
+		teamRows, err := repo.ListTeamsSpend(ctx, orgID)
 		if err != nil {
 			http.Error(w, "failed to fetch teams spend", http.StatusInternalServerError)
 			return
 		}
-		defer teamRows.Close()
 
 		// Hardcoded deltas for teams (from design)
 		teamDeltas := []float64{0.18, 0.09, 0.41, -0.04, 0.12, -0.08}
-		teamIdx := 0
 
-		for teamRows.Next() {
-			var ts TeamSpend
-			if err := teamRows.Scan(&ts.ID, &ts.Name, &ts.Members, &ts.Spend, &ts.PerUser); err != nil {
-				http.Error(w, "failed to scan team spend", http.StatusInternalServerError)
-				return
+		for i, ts := range teamRows {
+			teamSpend := TeamSpend{
+				ID:      ts.ID,
+				Name:    ts.Name,
+				Members: ts.Members,
+				Spend:   ts.Spend,
+				PerUser: ts.PerUser,
 			}
-			if teamIdx < len(teamDeltas) {
-				ts.Delta = teamDeltas[teamIdx]
+			if i < len(teamDeltas) {
+				teamSpend.Delta = teamDeltas[i]
 			}
-			resp.TeamsSpend = append(resp.TeamsSpend, ts)
-			teamIdx++
+			resp.TeamsSpend = append(resp.TeamsSpend, teamSpend)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
