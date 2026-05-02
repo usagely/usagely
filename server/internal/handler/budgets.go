@@ -22,51 +22,76 @@ type BudgetsResponse struct {
 	Budgets []Budget `json:"budgets"`
 }
 
-// Budgets returns a handler that fetches all budgets for the org
-func Budgets(pool *pgxpool.Pool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
+type BudgetsRepo interface {
+	ListBudgets(ctx context.Context, orgID string) ([]Budget, error)
+}
 
-		// Get org_id from context (set by auth middleware)
-		orgID, ok := r.Context().Value("org_id").(string)
-		if !ok || orgID == "" {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
+type pgxBudgetsRepo struct {
+	pool *pgxpool.Pool
+}
+
+func NewPgxBudgetsRepo(pool *pgxpool.Pool) BudgetsRepo {
+	if pool == nil {
+		return nil
+	}
+	return &pgxBudgetsRepo{pool: pool}
+}
+
+func (r *pgxBudgetsRepo) ListBudgets(ctx context.Context, orgID string) ([]Budget, error) {
+	// tenancy:ok query filters by org_id = $1
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, scope, period, limit_usd, used_usd, alert_pct
+		FROM budgets
+		WHERE org_id = $1
+		ORDER BY scope ASC
+	`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var budgets []Budget
+	for rows.Next() {
+		var b Budget
+		if err := rows.Scan(&b.ID, &b.Scope, &b.Period, &b.LimitUSD, &b.UsedUSD, &b.AlertPct); err != nil {
+			return nil, err
 		}
+		budgets = append(budgets, b)
+	}
 
+	return budgets, nil
+}
+
+func Budgets(repo BudgetsRepo) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		resp := &BudgetsResponse{
 			Budgets: []Budget{},
 		}
 
-		// If no pool, return empty response
-		if pool == nil {
+		if repo == nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(resp)
 			return
 		}
 
-		// Fetch budgets for org
-		rows, err := pool.Query(ctx, `
-			SELECT id, scope, period, limit_usd, used_usd, alert_pct
-			FROM budgets
-			WHERE org_id = $1
-			ORDER BY scope ASC
-		`, orgID)
+		orgID, ok := r.Context().Value("org_id").(string)
+		if !ok || orgID == "" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		budgets, err := repo.ListBudgets(ctx, orgID)
 		if err != nil {
 			http.Error(w, "failed to fetch budgets", http.StatusInternalServerError)
 			return
 		}
-		defer rows.Close()
 
-		for rows.Next() {
-			var b Budget
-			if err := rows.Scan(&b.ID, &b.Scope, &b.Period, &b.LimitUSD, &b.UsedUSD, &b.AlertPct); err != nil {
-				http.Error(w, "failed to scan budget", http.StatusInternalServerError)
-				return
-			}
-			resp.Budgets = append(resp.Budgets, b)
+		if budgets != nil {
+			resp.Budgets = budgets
 		}
 
 		w.Header().Set("Content-Type", "application/json")

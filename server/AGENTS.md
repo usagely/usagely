@@ -33,6 +33,26 @@ golang-migrate v4.19.1 for schema migrations. All versions sourced from
 - Tests live next to the file as `*_test.go`, use `net/http/httptest`, and run
   from the `server/` directory: `go test ./...`.
 
+## Testing handlers that touch the DB
+
+To test handlers that query the database without requiring a live Postgres
+connection, use the **interface-injection** pattern:
+
+1. Define a per-handler interface next to the handler (e.g. `ToolsRepo`).
+2. Write an unexported `pgx*Repo` adapter that wraps `*pgxpool.Pool` and
+   implements the interface using the existing SQL.
+3. Change the handler to accept the interface instead of the pool.
+4. In tests, implement the interface with a hand-written mock struct — no
+   mocking libraries, no `pgx` imports in the test file.
+5. Wire the adapter in `cmd/api/main.go` via its constructor.
+
+See `internal/handler/tools.go` and `internal/handler/tools_test.go` for the
+canonical example.
+
+> This pattern is being rolled out to all handlers per
+> [issue #34](https://github.com/usagely/usagely/issues/34). `tools.go` is
+> Pillar 1; remaining handlers will follow in subsequent PRs.
+
 ## Verify before committing
 
 ```bash

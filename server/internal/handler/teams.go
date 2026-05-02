@@ -30,14 +30,63 @@ type CostVsOutput struct {
 	Color   string  `json:"color"`
 }
 
+type TeamRow struct {
+	ID      string
+	Name    string
+	Color   string
+	Members int
+}
+
 type TeamsResponse struct {
 	Teams        []Team         `json:"teams"`
 	Heatmap      [][]float64    `json:"heatmap"`
 	CostVsOutput []CostVsOutput `json:"cost_vs_output"`
 }
 
+type TeamsRepo interface {
+	ListTeams(ctx context.Context, orgID string) ([]TeamRow, error)
+}
+
+type pgxTeamsRepo struct {
+	pool *pgxpool.Pool
+}
+
+func NewPgxTeamsRepo(pool *pgxpool.Pool) TeamsRepo {
+	if pool == nil {
+		return nil
+	}
+	return &pgxTeamsRepo{pool: pool}
+}
+
+func (r *pgxTeamsRepo) ListTeams(ctx context.Context, orgID string) ([]TeamRow, error) {
+	// tenancy:ok query filters by org_id = $1
+	teamRows, err := r.pool.Query(ctx, `
+		SELECT t.id, t.name, t.color, COUNT(u.id) as members
+		FROM teams t
+		LEFT JOIN users u ON u.team_id = t.id
+		WHERE t.org_id = $1
+		GROUP BY t.id, t.name, t.color
+		ORDER BY t.created_at ASC
+	`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer teamRows.Close()
+
+	var rows []TeamRow
+	for teamRows.Next() {
+		var tr TeamRow
+		if err := teamRows.Scan(&tr.ID, &tr.Name, &tr.Color, &tr.Members); err != nil {
+			return nil, err
+		}
+		rows = append(rows, tr)
+	}
+
+	return rows, nil
+}
+
 // Teams returns a handler that fetches all teams data
-func Teams(pool *pgxpool.Pool) http.HandlerFunc {
+func Teams(repo TeamsRepo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
@@ -48,8 +97,8 @@ func Teams(pool *pgxpool.Pool) http.HandlerFunc {
 			CostVsOutput: []CostVsOutput{},
 		}
 
-		// If no pool, return empty response
-		if pool == nil {
+		// If no repo, return empty response
+		if repo == nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(resp)
@@ -71,26 +120,18 @@ func Teams(pool *pgxpool.Pool) http.HandlerFunc {
 		deltas := []float64{0.18, 0.05, 0.41, 0.12, -0.08, 0.02, 0.0, 0.09}
 
 		// Fetch teams with member count
-		teamRows, err := pool.Query(ctx, `
-			SELECT t.id, t.name, t.color, COUNT(u.id) as members
-			FROM teams t
-			LEFT JOIN users u ON u.team_id = t.id
-			WHERE t.org_id = $1
-			GROUP BY t.id, t.name, t.color
-			ORDER BY t.created_at ASC
-		`, orgID)
+		teamRows, err := repo.ListTeams(ctx, orgID)
 		if err != nil {
 			http.Error(w, "failed to fetch teams", http.StatusInternalServerError)
 			return
 		}
-		defer teamRows.Close()
 
-		teamIdx := 0
-		for teamRows.Next() {
-			var team Team
-			if err := teamRows.Scan(&team.ID, &team.Name, &team.Color, &team.Members); err != nil {
-				http.Error(w, "failed to scan team", http.StatusInternalServerError)
-				return
+		for teamIdx, tr := range teamRows {
+			team := Team{
+				ID:      tr.ID,
+				Name:    tr.Name,
+				Color:   tr.Color,
+				Members: tr.Members,
 			}
 
 			// Apply hardcoded values
@@ -106,7 +147,6 @@ func Teams(pool *pgxpool.Pool) http.HandlerFunc {
 			}
 
 			resp.Teams = append(resp.Teams, team)
-			teamIdx++
 		}
 
 		// Heatmap: 6×10 matrix from screens1.jsx:249-256
