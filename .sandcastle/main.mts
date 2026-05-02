@@ -29,14 +29,30 @@
  */
 import { run, claudeCode } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const task = process.argv.slice(2).join(" ").trim();
+// Args: either `--file <path>` (preferred for multi-line tasks containing
+// backticks/$/quotes — bypasses pnpm's sh -c re-parse of script args) or a
+// trailing positional task string.
+const argv = process.argv.slice(2);
+let task = "";
+const fileFlag = argv.indexOf("--file");
+if (fileFlag !== -1) {
+  const path = argv[fileFlag + 1];
+  if (!path) {
+    console.error("--file requires a path");
+    process.exit(1);
+  }
+  task = readFileSync(path, "utf8").trim();
+} else {
+  task = argv.join(" ").trim();
+}
 if (!task) {
   console.error(
     'usage: pnpm sandcastle "<task description>"\n' +
+      "       pnpm sandcastle --file <path-to-task.txt>\n" +
       "       (the task string is substituted into .sandcastle/prompt.md as {{TASK}})",
   );
   process.exit(1);
