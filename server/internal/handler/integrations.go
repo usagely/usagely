@@ -326,8 +326,6 @@ func scanConnectorRunRow(row rowScanner) (*ConnectorRunRecord, error) {
 	return &run, nil
 }
 
-
-
 // ---------------------------------------------------------------------------
 // HTTP handler functions
 // ---------------------------------------------------------------------------
