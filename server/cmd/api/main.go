@@ -60,6 +60,16 @@ func main() {
 		r.Get("/shadow", handler.Shadow(handler.NewPgxShadowRepo(pool)))
 		r.Get("/approvals", handler.Approvals(handler.NewPgxApprovalsRepo(pool)))
 		r.Get("/forecast", handler.Forecast(handler.NewPgxForecastRepo(pool)))
+		integrationsRepo := handler.NewPgxIntegrationsRepo(pool)
+		r.Route("/integrations", func(r chi.Router) {
+			r.Get("/", handler.ListIntegrations(integrationsRepo))
+			r.Post("/", handler.CreateIntegration(integrationsRepo))
+			r.Get("/{id}", handler.GetIntegration(integrationsRepo))
+			r.Patch("/{id}", handler.UpdateIntegration(integrationsRepo))
+			r.Delete("/{id}", handler.DeleteIntegration(integrationsRepo))
+			r.Post("/{id}/sync", handler.TriggerSync(integrationsRepo))
+			r.Get("/{id}/runs", handler.ListRuns(integrationsRepo))
+		})
 	})
 
 	srv := &http.Server{
