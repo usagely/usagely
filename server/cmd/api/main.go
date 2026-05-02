@@ -51,7 +51,7 @@ func main() {
 		r.Get("/budgets", handler.Budgets(pool))
 		r.Get("/anomalies", handler.Anomalies(pool))
 		r.Get("/settings", handler.Settings)
-		r.Get("/tools", handler.Tools(pool))
+		r.Get("/tools", handler.Tools(handler.NewPgxToolsRepo(pool)))
 		r.Get("/models", handler.Models(pool))
 		r.Get("/people", handler.People(pool))
 		r.Get("/people/{email}", handler.Profile(pool))
