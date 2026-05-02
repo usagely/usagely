@@ -4,5 +4,20 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
+    coverage: {
+      provider: 'v8',
+      include: [
+        'src/**/*.{ts,tsx}',
+        'app/**/*.{ts,tsx}',
+        'middleware.ts',
+      ],
+      exclude: [
+        '**/*.test.{ts,tsx}',
+        '**/*.spec.{ts,tsx}',
+        'src/components/ui/**',
+        'app/**/layout.tsx',
+        'app/**/loading.tsx',
+      ],
+    },
   },
 });
