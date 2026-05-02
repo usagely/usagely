@@ -145,6 +145,35 @@ func TestAuthMiddleware(t *testing.T) {
 	}
 }
 
+func TestAuthMiddleware_DevMode(t *testing.T) {
+	am := NewAuthMiddleware("skip")
+
+	var gotUserID, gotEmail, gotOrgID string
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUserID, _ = r.Context().Value(ContextKeyUserID).(string)
+		gotEmail, _ = r.Context().Value(ContextKeyUserEmail).(string)
+		gotOrgID, _ = r.Context().Value("org_id").(string)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	am.Handler(next).ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if gotUserID != "dev-user" {
+		t.Errorf("userID = %q, want %q", gotUserID, "dev-user")
+	}
+	if gotEmail != "dev@usagely.local" {
+		t.Errorf("email = %q, want %q", gotEmail, "dev@usagely.local")
+	}
+	if gotOrgID != "00000000-0000-0000-0000-000000000001" {
+		t.Errorf("org_id = %q, want %q", gotOrgID, "00000000-0000-0000-0000-000000000001")
+	}
+}
+
 func TestEditionGate(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
