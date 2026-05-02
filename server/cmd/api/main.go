@@ -47,9 +47,9 @@ func main() {
 		r.Use(authMiddleware.Handler)
 		r.Use(middleware.EditionGate(cfg.Edition))
 		r.Get("/dashboard", handler.Dashboard(pool))
-		r.Get("/teams", handler.Teams(pool))
+		r.Get("/teams", handler.Teams(handler.NewPgxTeamsRepo(pool)))
 		r.Get("/budgets", handler.Budgets(handler.NewPgxBudgetsRepo(pool)))
-		r.Get("/anomalies", handler.Anomalies(pool))
+		r.Get("/anomalies", handler.Anomalies(handler.NewPgxAnomaliesRepo(pool)))
 		r.Get("/settings", handler.Settings(handler.NewPgxSettingsRepo(pool)))
 		r.Get("/tools", handler.Tools(handler.NewPgxToolsRepo(pool)))
 		r.Get("/models", handler.Models(handler.NewPgxModelsRepo(pool)))
@@ -58,7 +58,7 @@ func main() {
 		r.Get("/recommendations", handler.Recommendations(handler.NewPgxRecommendationsRepo(pool)))
 		r.Get("/shadow", handler.Shadow(handler.NewPgxShadowRepo(pool)))
 		r.Get("/approvals", handler.Approvals(handler.NewPgxApprovalsRepo(pool)))
-		r.Get("/forecast", handler.Forecast(pool))
+		r.Get("/forecast", handler.Forecast(handler.NewPgxForecastRepo(pool)))
 	})
 
 	srv := &http.Server{

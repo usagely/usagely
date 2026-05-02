@@ -23,8 +23,50 @@ type AnomaliesResponse struct {
 	Anomalies []AnomalyItem `json:"anomalies"`
 }
 
+type AnomaliesRepo interface {
+	ListAnomalies(ctx context.Context, orgID string) ([]AnomalyItem, error)
+}
+
+type pgxAnomaliesRepo struct {
+	pool *pgxpool.Pool
+}
+
+func NewPgxAnomaliesRepo(pool *pgxpool.Pool) AnomaliesRepo {
+	if pool == nil {
+		return nil
+	}
+	return &pgxAnomaliesRepo{pool: pool}
+}
+
+func (r *pgxAnomaliesRepo) ListAnomalies(ctx context.Context, orgID string) ([]AnomalyItem, error) {
+	// tenancy:ok query filters by org_id = $1
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, title, body, severity, team_name, owner_name, detected_at
+		FROM anomalies
+		WHERE org_id = $1
+		ORDER BY detected_at DESC
+	`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var anomalies []AnomalyItem
+	for rows.Next() {
+		var a AnomalyItem
+		var detectedAt time.Time
+		if err := rows.Scan(&a.ID, &a.Title, &a.Body, &a.Severity, &a.TeamName, &a.OwnerName, &detectedAt); err != nil {
+			return nil, err
+		}
+		a.DetectedAt = detectedAt.Format(time.RFC3339)
+		anomalies = append(anomalies, a)
+	}
+
+	return anomalies, nil
+}
+
 // Anomalies returns a handler that fetches all anomalies for the org
-func Anomalies(pool *pgxpool.Pool) http.HandlerFunc {
+func Anomalies(repo AnomaliesRepo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
@@ -40,8 +82,8 @@ func Anomalies(pool *pgxpool.Pool) http.HandlerFunc {
 			Anomalies: []AnomalyItem{},
 		}
 
-		// If no pool, return empty response
-		if pool == nil {
+		// If no repo, return empty response
+		if repo == nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(resp)
@@ -49,27 +91,14 @@ func Anomalies(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		// Fetch anomalies for org, ordered by detected_at DESC
-		rows, err := pool.Query(ctx, `
-			SELECT id, title, body, severity, team_name, owner_name, detected_at
-			FROM anomalies
-			WHERE org_id = $1
-			ORDER BY detected_at DESC
-		`, orgID)
+		anomalies, err := repo.ListAnomalies(ctx, orgID)
 		if err != nil {
 			http.Error(w, "failed to fetch anomalies", http.StatusInternalServerError)
 			return
 		}
-		defer rows.Close()
 
-		for rows.Next() {
-			var a AnomalyItem
-			var detectedAt time.Time
-			if err := rows.Scan(&a.ID, &a.Title, &a.Body, &a.Severity, &a.TeamName, &a.OwnerName, &detectedAt); err != nil {
-				http.Error(w, "failed to scan anomaly", http.StatusInternalServerError)
-				return
-			}
-			a.DetectedAt = detectedAt.Format(time.RFC3339)
-			resp.Anomalies = append(resp.Anomalies, a)
+		if anomalies != nil {
+			resp.Anomalies = anomalies
 		}
 
 		// Add hardcoded extended anomalies if DB is empty or has fewer than expected
