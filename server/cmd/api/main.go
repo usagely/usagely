@@ -41,7 +41,7 @@ func main() {
 	r.Use(middleware.Recovery)
 	r.Use(middleware.CORS(cfg.CORSOrigin))
 	r.Get("/healthz", handler.Health)
-	r.Get("/healthz/ready", handler.Ready(pool))
+	r.Get("/healthz/ready", handler.Ready(handler.NewPgxPingable(pool)))
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(authMiddleware.Handler)
@@ -53,8 +53,9 @@ func main() {
 		r.Get("/settings", handler.Settings(handler.NewPgxSettingsRepo(pool)))
 		r.Get("/tools", handler.Tools(handler.NewPgxToolsRepo(pool)))
 		r.Get("/models", handler.Models(handler.NewPgxModelsRepo(pool)))
-		r.Get("/people", handler.People(pool))
-		r.Get("/people/{email}", handler.Profile(pool))
+		peopleRepo := handler.NewPgxPeopleRepo(pool)
+		r.Get("/people", handler.People(peopleRepo))
+		r.Get("/people/{email}", handler.Profile(peopleRepo))
 		r.Get("/recommendations", handler.Recommendations(handler.NewPgxRecommendationsRepo(pool)))
 		r.Get("/shadow", handler.Shadow(handler.NewPgxShadowRepo(pool)))
 		r.Get("/approvals", handler.Approvals(handler.NewPgxApprovalsRepo(pool)))
